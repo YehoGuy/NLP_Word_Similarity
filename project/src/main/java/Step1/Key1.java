@@ -55,7 +55,7 @@ public class Key1 implements WritableComparable<Key1>{
     public boolean equals(Object obj){
         if(obj instanceof Key1){
             Key1 other = (Key1) obj;
-            return this.root==other.root && this.dependant==other.dependant && this.label==other.label;
+            return this.root.equals(other.root) && this.dependant.equals(other.dependant) && this.label.equals(other.label);
         }
         return false;
     }
