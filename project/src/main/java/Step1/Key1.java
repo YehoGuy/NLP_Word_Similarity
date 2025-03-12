@@ -26,7 +26,7 @@ public class Key1 implements WritableComparable<Key1>{
         this.label = new Text(label);
     }
 
-    // Hadoop requires
+    // Hadoop requires empty constructor
     public Key1(){
         this.root = new Text();
         this.dependant = new Text();
@@ -94,7 +94,7 @@ public class Key1 implements WritableComparable<Key1>{
         else if(other.root.equals(Consts.TEXT_STAR))
             cmp = 1;
         else
-            this.root.compareTo(other.root);
+            cmp = this.root.compareTo(other.root);
         if(cmp!=0)
             return cmp;
 
@@ -104,7 +104,7 @@ public class Key1 implements WritableComparable<Key1>{
         else if(other.dependant.equals(Consts.TEXT_STAR))
             cmp = 1;
         else
-            this.dependant.compareTo(other.dependant);
+            cmp = this.dependant.compareTo(other.dependant);
         if(cmp!=0)
             return cmp;
 

@@ -1,6 +1,8 @@
 package Step1;
 import java.io.BufferedReader;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.util.HashSet;
 
@@ -21,6 +23,8 @@ import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
+import com.amazonaws.services.s3.model.ObjectMetadata;
+import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 
 import Helpers.Consts;
@@ -32,11 +36,16 @@ public class Step1 {
         // for optimization - minimizing number of keys outputted from the Mapper.
         private static final HashSet<String> relevantWords = new HashSet<>();
 
+        private long countL=0;
+        private long countF=0;
+        private String latestRoot = "";
+
+        @Override
         protected void setup(Context context) throws IOException, InterruptedException {
             super.setup(context);
             // retrieve relevant words file and setup the relevantWords Set.
             AmazonS3 s3 = AmazonS3ClientBuilder.standard().withRegion(Regions.US_WEST_2).build();
-			S3Object s3Object = s3.getObject(new GetObjectRequest(Consts.BUCKET, Consts.relevantWordsS3Key));
+			S3Object s3Object = s3.getObject(new GetObjectRequest(Consts.BUCKET, Consts.RELEVANT_WORDS_S3_KEY));
 			BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object.getObjectContent()));
             String line;
 			while ((line = reader.readLine()) != null) 
@@ -45,9 +54,6 @@ public class Step1 {
 
         /*
          * isLegalWord is used to filter bad (jibberish) words.
-         * 
-         * unrelevant - does not appear in the Gold Standard, hence won't have a
-         * 
          * e.g numbers, special characters, etc.
          * in order to compute that quickly O(1), 
          * we assume that if the first character is a letter, 
@@ -55,13 +61,18 @@ public class Step1 {
          * then the rest of the characters are also letters.
          * (from observation, the bad words are either numbers, or words that start/end with special characters)
          */
-        public boolean isLegalWord(String word){
+        public boolean isLegalWord(String word){ 
+            return word.length()>0 && 
+                ((word.charAt(0)>='a' && word.charAt(0)<='z') || (word.charAt(0)>='A' && word.charAt(0)<='Z'))
+                && ((word.charAt(word.length()-1)>='a' && word.charAt(word.length()-1)<='z') || (word.charAt(word.length()-1)>='A' && word.charAt(word.length()-1)<='Z'));
+            
+        }
+
+        /*
+         * irelevant - does not appear in the Gold Standard.
+         */
+        public boolean isRelevantLexema(String word){
             return relevantWords.contains(word);
-            /* 
-                return word.length()>0 && 
-                    ((word.charAt(0)>='a' && word.charAt(0)<='z') || (word.charAt(0)>='A' && word.charAt(0)<='Z'))
-                    && ((word.charAt(word.length()-1)>='a' && word.charAt(word.length()-1)<='z') || (word.charAt(word.length()-1)>='A' && word.charAt(word.length()-1)<='Z'));
-            */
         }
 
 
@@ -73,26 +84,57 @@ public class Step1 {
             // a trick to get only the (0)root, (1)edges and (2)count. substring from 0 to the third tab index;
             int ttabI=line.indexOf("\t",line.indexOf("\t", line.indexOf("\t")+1)+1);
             String[] parts = line.substring(0,ttabI).split("\t"); 
-            String[] edges = parts[1].split("\\s+");
-            for(String e : edges){
-                String[] edgeComposits = e.split("/");
-                // 'target/root word' = parts[0] , 'dependant word' = eComp[0] , 'relation' = eComp[2] , 'count' = parts[2]
-                if(isLegalWord(parts[0]) && isLegalWord(edgeComposits[0])){
-                    // for count(F=f,L=l)
-                    Key1 wKey = new Key1(parts[0],edgeComposits[0],edgeComposits[2]);
-                    context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
-                    // for count(F=f)
-                    wKey = new Key1(parts[0],Consts.STAR,Consts.STAR);
-                    context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
-                    // for count(L=l)
-                    wKey = new Key1(Consts.STAR,edgeComposits[0],edgeComposits[2]);
-                    context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
+            if(isRelevantLexema(parts[0])){
+                String[] edges = parts[1].split("\\s+");
+                for(String e : edges){
+                    String[] edgeComposits = e.split("/");
+                    // 'target/root word' = parts[0] , 'dependant word' = eComp[0] , 'relation' = eComp[2] , 'count' = parts[2]
+                    if(isLegalWord(parts[0]) && isLegalWord(edgeComposits[0])){
+                        // for count(F=f,L=l)
+                        Key1 wKey = new Key1(parts[0],edgeComposits[0],edgeComposits[2]);
+                        context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
+                        // for count(F=f)
+                        wKey = new Key1(parts[0],Consts.STAR,Consts.STAR);
+                        context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
+                        // for count(L=l)
+                        wKey = new Key1(Consts.STAR,edgeComposits[0],edgeComposits[2]);
+                        context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
+                    }
                 }
             }
+
+            // for count(L) calc
+            // the biarcs are lexicographically sorted by part[0] first,
+            // hence this calculation method is valid.
+            if(!parts[0].equals(latestRoot)){
+                countL++;
+                latestRoot=parts[0];
+            }
+        }
+
+        private void uploadCountL(Context context) throws IOException {
+            AmazonS3 s3 = AmazonS3ClientBuilder.standard().withRegion(Regions.US_WEST_2).build();
+            String sumString = String.valueOf(countL);
+            InputStream stream = new ByteArrayInputStream(sumString.getBytes());
+            ObjectMetadata metadata = new ObjectMetadata();
+            metadata.setContentLength(sumString.getBytes().length);
+            int mapperId = context.getTaskAttemptID().getTaskID().getId();
+            PutObjectRequest request = new PutObjectRequest(Consts.BUCKET, Consts.COUNT_L_S3_KEY+mapperId, stream ,metadata);
+            s3.putObject(request);
+        }
+        
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            uploadCountL(context);
+            super.cleanup(context);
         }
 
     }
     
+
+
+
+
     /*
      * the combiner is a local aggregation optimization
      * it is used to reduce the amount of data that is sent to the reducer
@@ -109,6 +151,9 @@ public class Step1 {
         }
     }
 
+
+
+
     public static class Partitioner1 extends Partitioner<Key1, LongWritable> {
         @Override
         public int getPartition(Key1 key, LongWritable value, int numPartitions) {
@@ -116,9 +161,11 @@ public class Step1 {
         }
     }
 
+
+
     
     public static class Reducer1 extends Reducer<Key1,LongWritable,Key1,LongWritable> {
-        private static long countL=0;
+        
         @Override
         public void reduce(Key1 key, Iterable<LongWritable> values, Context context) throws IOException,  InterruptedException {
             long sum = 0;
@@ -126,11 +173,12 @@ public class Step1 {
                 sum += val.get();
             }
             context.write(key, new LongWritable(sum));
-            // for
         }
 
     }
     
+
+
 
 
     public static void main(String[] args) throws Exception {
