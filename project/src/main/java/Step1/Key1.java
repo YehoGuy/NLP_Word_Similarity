@@ -19,11 +19,13 @@ public class Key1 implements WritableComparable<Key1>{
     private final Text root;
     private final Text dependant;
     private final Text label;
+    private final boolean isAllStar;
 
     public Key1(String root, String dependant, String label){
         this.root = new Text(root);
         this.dependant = new Text(dependant);
         this.label = new Text(label);
+        this.isAllStar = root.equals(Consts.STAR) && dependant.equals(Consts.STAR) && label.equals(Consts.STAR);
     }
 
     // Hadoop requires empty constructor
@@ -31,6 +33,7 @@ public class Key1 implements WritableComparable<Key1>{
         this.root = new Text();
         this.dependant = new Text();
         this.label = new Text();
+        isAllStar = false;
     }
 
     public String getRoot(){
@@ -51,14 +54,6 @@ public class Key1 implements WritableComparable<Key1>{
         return root+" "+dependant+"-"+label;
     }
 
-    @Override
-    public boolean equals(Object obj){
-        if(obj instanceof Key1){
-            Key1 other = (Key1) obj;
-            return this.root.equals(other.root) && this.dependant.equals(other.dependant) && this.label.equals(other.label);
-        }
-        return false;
-    }
 
     @Override
     public void write(DataOutput out) throws IOException {
@@ -77,39 +72,61 @@ public class Key1 implements WritableComparable<Key1>{
     //so that all keys with the same first word will be sent to the same reducer
     @Override
     public int hashCode() {
-        return this.root.toString().hashCode();
+        return this.dependant.toString().hashCode();
+    }
+
+    @Override
+    public boolean equals(Object obj) {
+        if (obj instanceof Key1) {
+            Key1 key = (Key1) obj;
+            return root.equals(key.root) && dependant.equals(key.dependant) && label.equals(key.label);
+        }
+        return false;
     }
 
     @Override
     /*
-    * lexicographical by order root-->dependant-->label
-    * '*' first
-    */
-    public int compareTo(Key1 other) {
-        int cmp = 0;
-
-        // root comparison
-        if(this.root.equals(Consts.TEXT_STAR))
-            cmp = -1;
-        else if(other.root.equals(Consts.TEXT_STAR))
-            cmp = 1;
-        else
-            cmp = this.root.compareTo(other.root);
-        if(cmp!=0)
-            return cmp;
-
-        // dependant comparison
+     * compareTo method compares the keys lexicographically-like
+     * except that "*" is considered to be the smallest word
+     */
+    public int compareTo(Key1 other){
+        if(this.root.equals(other.root) &&
+           this.dependant.equals(other.dependant) &&
+           this.label.equals(other.label))
+            {return 0;}
+        //  compare second word
         if(this.dependant.equals(Consts.TEXT_STAR))
-            cmp = -1;
-        else if(other.dependant.equals(Consts.TEXT_STAR))
-            cmp = 1;
-        else
-            cmp = this.dependant.compareTo(other.dependant);
-        if(cmp!=0)
-            return cmp;
+            return -1;
+        if(other.dependant.equals(Consts.TEXT_STAR))
+            return 1;
+        if(this.dependant.compareTo(other.dependant) < 0)
+            return -1;
+        if(this.dependant.compareTo(other.dependant) > 0)
+            return 1;
+        // compare third word
+        if(this.label.equals(Consts.TEXT_STAR))
+            return -1;
+        if(other.label.equals(Consts.TEXT_STAR))
+            return 1;
+        if(this.label.compareTo(other.label) < 0)
+            return -1;
+        if(this.label.compareTo(other.label) > 0)
+            return 1;
+        // compare first word
+        if(this.root.equals(Consts.TEXT_STAR))
+            return -1;
+        if(other.root.equals(Consts.TEXT_STAR))
+            return 1;
+        if(this.root.compareTo(other.root) < 0)
+            return -1;
+        if(this.root.compareTo(other.root) > 0)
+            return 1;
+        // if all are equal
+        return 0;
+    }
 
-        // label comparison;
-        return this.label.compareTo(other.label);
+    public boolean isAllStar(){
+        return this.isAllStar;
     }
 
 

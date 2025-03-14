@@ -1,9 +1,8 @@
 package Step1;
 import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.util.HashMap;
 import java.util.HashSet;
 
 import org.apache.hadoop.conf.Configuration;
@@ -23,22 +22,22 @@ import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.GetObjectRequest;
-import com.amazonaws.services.s3.model.ObjectMetadata;
-import com.amazonaws.services.s3.model.PutObjectRequest;
 import com.amazonaws.services.s3.model.S3Object;
 
 import Helpers.Consts;
+import Helpers.S3Methods;
 
 public class Step1 {
 
     public static class Mapper1 extends Mapper<LongWritable, Text, Key1, LongWritable> {
         // relevantWords is a datastructure (set) containing only the relevant target words,
         // for optimization - minimizing number of keys outputted from the Mapper.
-        private static final HashSet<String> relevantWords = new HashSet<>();
+        private final HashSet<String> relevantWords = new HashSet<>();
 
         private long countL=0;
-        private long countF=0;
         private String latestRoot = "";
+
+        private Key1 wKey;
 
         @Override
         protected void setup(Context context) throws IOException, InterruptedException {
@@ -63,9 +62,8 @@ public class Step1 {
          */
         public boolean isLegalWord(String word){ 
             return word.length()>0 && 
-                ((word.charAt(0)>='a' && word.charAt(0)<='z') || (word.charAt(0)>='A' && word.charAt(0)<='Z'))
-                && ((word.charAt(word.length()-1)>='a' && word.charAt(word.length()-1)<='z') || (word.charAt(word.length()-1)>='A' && word.charAt(word.length()-1)<='Z'));
-            
+                Character.isLetter(word.charAt(0))
+                && Character.isLetter(word.charAt(word.length()-1));
         }
 
         /*
@@ -89,20 +87,19 @@ public class Step1 {
                 for(String e : edges){
                     String[] edgeComposits = e.split("/");
                     // 'target/root word' = parts[0] , 'dependant word' = eComp[0] , 'relation' = eComp[2] , 'count' = parts[2]
-                    if(isLegalWord(parts[0]) && isLegalWord(edgeComposits[0])){
+                    if(isLegalWord(edgeComposits[0])){
                         // for count(F=f,L=l)
-                        Key1 wKey = new Key1(parts[0],edgeComposits[0],edgeComposits[2]);
+                        wKey = new Key1(parts[0],edgeComposits[0],edgeComposits[2]);
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                         // for count(F=f)
-                        wKey = new Key1(parts[0],Consts.STAR,Consts.STAR);
+                        wKey = new Key1(Consts.STAR,edgeComposits[0],edgeComposits[2]);
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                         // for count(L=l)
-                        wKey = new Key1(Consts.STAR,edgeComposits[0],edgeComposits[2]);
+                        wKey = new Key1(parts[0],Consts.STAR,Consts.STAR);
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                     }
                 }
             }
-
             // for count(L) calc
             // the biarcs are lexicographically sorted by part[0] first,
             // hence this calculation method is valid.
@@ -111,21 +108,11 @@ public class Step1 {
                 latestRoot=parts[0];
             }
         }
-
-        private void uploadCountL(Context context) throws IOException {
-            AmazonS3 s3 = AmazonS3ClientBuilder.standard().withRegion(Regions.US_WEST_2).build();
-            String sumString = String.valueOf(countL);
-            InputStream stream = new ByteArrayInputStream(sumString.getBytes());
-            ObjectMetadata metadata = new ObjectMetadata();
-            metadata.setContentLength(sumString.getBytes().length);
-            int mapperId = context.getTaskAttemptID().getTaskID().getId();
-            PutObjectRequest request = new PutObjectRequest(Consts.BUCKET, Consts.COUNT_L_S3_KEY+mapperId, stream ,metadata);
-            s3.putObject(request);
-        }
         
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
-            uploadCountL(context);
+            Key1 countLKey = new Key1(Consts.STAR,Consts.STAR,Consts.STAR);
+            context.write(countLKey,new LongWritable(countL));
             super.cleanup(context);
         }
 
@@ -165,6 +152,12 @@ public class Step1 {
 
     
     public static class Reducer1 extends Reducer<Key1,LongWritable,Key1,LongWritable> {
+
+        // since we only output relevant words, which are of O(GS_COUPLES_AMOUNT)
+        // we can save the count(L=l) counts in memory
+        private final HashMap<String,Long> countLel = new HashMap<>();
+        boolean isFirstRun = true, isLelMapper = false, writeLel=false;;
+
         
         @Override
         public void reduce(Key1 key, Iterable<LongWritable> values, Context context) throws IOException,  InterruptedException {
@@ -172,7 +165,35 @@ public class Step1 {
             for (LongWritable val : values) {
                 sum += val.get();
             }
+
+            // for count(L)
+            if(key.getRoot().equals(Consts.STAR) && key.getDependant().equals(Consts.STAR) && key.getLabel().equals(Consts.STAR)){
+                S3Methods.uploadCountL(sum);
+                return;
+            }
+
+            if(isFirstRun){
+                isLelMapper = key.getDependant().equals(Consts.STAR) && key.getLabel().equals(Consts.STAR);
+                writeLel = isLelMapper;
+                isFirstRun = false;
+            }
+            // upload L=l counts.
+            if(isLelMapper && key.getDependant().equals(Consts.STAR) && key.getLabel().equals(Consts.STAR)){
+                countLel.put(key.getRoot(),sum);
+                return;
+            }
+            // if finished count(L=l)'s
+            if(isLelMapper && !key.getDependant().equals(Consts.STAR))
+                isLelMapper=false;
+            
             context.write(key, new LongWritable(sum));
+        }
+
+        @Override
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            if(writeLel)
+                S3Methods.uploadLel(countLel);
+            super.cleanup(context);
         }
 
     }

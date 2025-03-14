@@ -15,7 +15,7 @@ import Helpers.Consts;
 public class App {
     public static AWSCredentialsProvider credentialsProvider;
     public static AmazonElasticMapReduce emr;
-    public static int numberOfInstances = 10;
+    public static int numberOfInstances = 5;
 
     public static void main(String[]args){
         //int lineLimit = -1;
@@ -37,8 +37,8 @@ public class App {
                 .withRegion("us-east-1")
                 .build();
         System.out.println("[INFO] Connecting to aws succeeded.");
-        System.out.print( "existing clusters: ");
-        System.out.println(emr.listClusters());
+        //System.out.print( "existing clusters: ");
+        //System.out.println(emr.listClusters());
 
         // Step 1
         HadoopJarStepConfig step1 = new HadoopJarStepConfig()
