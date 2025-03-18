@@ -15,7 +15,7 @@ import Helpers.Consts;
 public class App {
     public static AWSCredentialsProvider credentialsProvider;
     public static AmazonElasticMapReduce emr;
-    public static int numberOfInstances = 5;
+    public static int numberOfInstances = 9;
 
     public static void main(String[]args){
         //int lineLimit = -1;
@@ -49,13 +49,32 @@ public class App {
                 .withName("Step1")
                 .withHadoopJarStep(step1)
                 .withActionOnFailure("TERMINATE_JOB_FLOW");
+        // Step 2
+        HadoopJarStepConfig step2 = new HadoopJarStepConfig()
+                .withJar(Consts.STEP2_JAR)
+                .withMainClass("Step2");
+
+        StepConfig stepConfig2 = new StepConfig()
+                .withName("Step2")
+                .withHadoopJarStep(step2)
+                .withActionOnFailure("TERMINATE_JOB_FLOW");
+
+        // Step 3
+        HadoopJarStepConfig step3 = new HadoopJarStepConfig()
+                .withJar(Consts.STEP3_JAR)
+                .withMainClass("Step3");
+
+        StepConfig stepConfig3 = new StepConfig()
+                .withName("Step3")
+                .withHadoopJarStep(step3)
+                .withActionOnFailure("TERMINATE_JOB_FLOW");
 
 
         //Job flow
         JobFlowInstancesConfig instances = new JobFlowInstancesConfig()
                 .withInstanceCount(numberOfInstances)
-                .withMasterInstanceType(InstanceType.M4Large.toString())
-                .withSlaveInstanceType(InstanceType.M4Large.toString())
+                .withMasterInstanceType(InstanceType.I3Xlarge.toString())
+                .withSlaveInstanceType(InstanceType.I3Xlarge.toString())
                 .withHadoopVersion("2.9.2")
                 .withEc2KeyName("vockey")
                 .withKeepJobFlowAliveWhenNoSteps(false)
@@ -65,7 +84,7 @@ public class App {
         RunJobFlowRequest runFlowRequest = new RunJobFlowRequest()
                 .withName("Word Similarity project")
                 .withInstances(instances)
-                .withSteps(stepConfig1)
+                .withSteps(stepConfig1 , stepConfig2 , stepConfig3)
                 .withLogUri(Consts.LOGS)
                 .withServiceRole("EMR_DefaultRole")
                 .withJobFlowRole("EMR_EC2_DefaultRole")

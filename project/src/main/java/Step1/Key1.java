@@ -19,13 +19,11 @@ public class Key1 implements WritableComparable<Key1>{
     private final Text root;
     private final Text dependant;
     private final Text label;
-    private final boolean isAllStar;
 
     public Key1(String root, String dependant, String label){
         this.root = new Text(root);
         this.dependant = new Text(dependant);
         this.label = new Text(label);
-        this.isAllStar = root.equals(Consts.STAR) && dependant.equals(Consts.STAR) && label.equals(Consts.STAR);
     }
 
     // Hadoop requires empty constructor
@@ -33,7 +31,6 @@ public class Key1 implements WritableComparable<Key1>{
         this.root = new Text();
         this.dependant = new Text();
         this.label = new Text();
-        isAllStar = false;
     }
 
     public String getRoot(){
@@ -72,7 +69,7 @@ public class Key1 implements WritableComparable<Key1>{
     //so that all keys with the same first word will be sent to the same reducer
     @Override
     public int hashCode() {
-        return this.dependant.toString().hashCode();
+        return this.dependant.hashCode();
     }
 
     @Override
@@ -123,10 +120,6 @@ public class Key1 implements WritableComparable<Key1>{
             return 1;
         // if all are equal
         return 0;
-    }
-
-    public boolean isAllStar(){
-        return this.isAllStar;
     }
 
 

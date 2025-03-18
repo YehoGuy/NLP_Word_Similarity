@@ -16,7 +16,7 @@ import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
-import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
+import org.apache.hadoop.mapreduce.lib.output.SequenceFileOutputFormat;
 
 import com.amazonaws.regions.Regions;
 import com.amazonaws.services.s3.AmazonS3;
@@ -48,7 +48,7 @@ public class Step1 {
 			BufferedReader reader = new BufferedReader(new InputStreamReader(s3Object.getObjectContent()));
             String line;
 			while ((line = reader.readLine()) != null) 
-                relevantWords.add(line);
+                relevantWords.add(line.toLowerCase());
         }
 
         /*
@@ -70,7 +70,7 @@ public class Step1 {
          * irelevant - does not appear in the Gold Standard.
          */
         public boolean isRelevantLexema(String word){
-            return relevantWords.contains(word);
+            return relevantWords.contains(word.toLowerCase());
         }
 
 
@@ -89,13 +89,13 @@ public class Step1 {
                     // 'target/root word' = parts[0] , 'dependant word' = eComp[0] , 'relation' = eComp[2] , 'count' = parts[2]
                     if(isLegalWord(edgeComposits[0])){
                         // for count(F=f,L=l)
-                        wKey = new Key1(parts[0],edgeComposits[0],edgeComposits[2]);
+                        wKey = new Key1(parts[0].toLowerCase(),edgeComposits[0].toLowerCase(),edgeComposits[2].toLowerCase());
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                         // for count(F=f)
-                        wKey = new Key1(Consts.STAR,edgeComposits[0],edgeComposits[2]);
+                        wKey = new Key1(Consts.STAR,edgeComposits[0].toLowerCase(),edgeComposits[2].toLowerCase());
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                         // for count(L=l)
-                        wKey = new Key1(parts[0],Consts.STAR,Consts.STAR);
+                        wKey = new Key1(parts[0].toLowerCase(),Consts.STAR,Consts.STAR);
                         context.write(wKey, new LongWritable(Long.valueOf(parts[2])));
                     }
                 }
@@ -103,9 +103,9 @@ public class Step1 {
             // for count(L) calc
             // the biarcs are lexicographically sorted by part[0] first,
             // hence this calculation method is valid.
-            if(!parts[0].equals(latestRoot)){
+            if(!parts[0].toLowerCase().equals(latestRoot)){
                 countL++;
-                latestRoot=parts[0];
+                latestRoot=parts[0].toLowerCase();
             }
         }
         
@@ -218,7 +218,7 @@ public class Step1 {
 
         //for running on AWS Emr:
         job.setInputFormatClass(TextInputFormat.class);
-        job.setOutputFormatClass(TextOutputFormat.class);
+        job.setOutputFormatClass(SequenceFileOutputFormat.class);
         FileInputFormat.addInputPath(job, new Path(Consts.STEP1_INPUT));
         FileOutputFormat.setOutputPath(job, new Path(Consts.STEP1_OUTPUT));
 
