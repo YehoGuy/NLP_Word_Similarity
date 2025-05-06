@@ -31,13 +31,52 @@ F = the “feature” (context word)
 Whenever you see something like P(F = f | L = l), it means “the probability of feature f given that our target lexeme is l.”
 
 ## Data Preperation - Hadoop Map-Reduce on AWS EMR
-### Step 1 - calculating count(F=f,L=l), count(F=f), count(L=l) for every f,l in the corpus.
-### Step 2 - calculating count(F), count(L) using keys-containing-*s from Step 1.
-!!!! Filtering only what is in the gold standard
-!!!! ouputing the data in weka's ARFF format
-### Step 3 - calculating the 24-D final vectors
+System Design 
+The system is implemented as three Map‑Reduce stages:
 
-## Training a ML classifier on Weka
+Association‑count stage – For every lexeme–feature pair we tally all frequency statistics required for association measures: count(L), count(F), count(l,f), count(L = l), count(F = f).
+Input: lines describing dependency parse trees.
+Output: records <lexeme, feature‑label, count>.
+The mapper also keeps Count(L) and Count(L = l) in memory, and—because of memory limits—filters so that only words appearing in the gold‑standard set are processed.
+
+Association‑score stage – For each lexeme we compute the chosen association measures (raw frequency, relative frequency, PMI, t‑test) for all of its features and aggregate the results.
+Output: records HashMap<feature, [count, freq, PMI, T‑Test]> per lexeme.
+
+Similarity‑vector stage – A three‑way self‑join merges these records with the (filtered) word‑pair file, and for every relevant pair it produces a 24‑dimensional vector containing all combinations of the four association measures × six vector‑similarity measures.
+Example output:
+
+pgsql
+Copy
+Edit
+lexeme1  lexeme2  [0.0, 0.0, 0.999998, 1.0, 1.0, 0.0, … , 0.0]
+``` :contentReference[oaicite:2]{index=2}:contentReference[oaicite:3]{index=3}  
+Communication Statistics – 10 % Corpus Run 
+
+Stage	Mapper in	Mapper out	Combiner out	Reducer out
+1	159,033,091 records (4.14 GB)	178,902,389 records (63 MB)	7,065,206	3,811,348
+2	3,811,348	3,261,318 records (173 MB)	0	414
+3	414	2,349,864 records (11.15 TB virtual)	0	48
+
+Classification Results (WEKA SGDText, 10‑fold CV) 
+
+Overall accuracy: 91.67 % (44 / 48 instances)
+
+Kappa: 0.75 MAE: 0.0833 RMSE: 0.2887
+
+Class	Recall	Precision	F‑Measure	ROC AUC
+similar	66.7 %	100 %	0.80	0.833
+not_similar	100 %	90 %	0.947	0.833
+Weighted avg.	91.7 %	92.5 %	0.911	0.862
+
+Confusion matrix
+
+sql
+Copy
+Edit
+a  b  <-- classified as
+8  4 | a = similar
+0 36 | b = not_similar
+Summary: 44 of 48 instances were correctly classified, yielding 91.67 % accuracy. The model retrieves all not‑similar pairs (100 % recall) at 90 % precision, while for similar pairs it reaches 100 % precision with 66.7 % recall (F1 = 0.8
 
 
 ### Guy Yehoshua, Software Engineering B.Sc.
